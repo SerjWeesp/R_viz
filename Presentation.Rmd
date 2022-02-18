@@ -1,0 +1,291 @@
+---
+title: "eBay cars announcements analysis"
+author: "Sergey Amarin, Oleksii Zymin"
+date: "1/7/2022"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Introduction
+<font size="2">
+The goal of our analysis is to derive useful findings regarding the structure of the American cars market, it's the most popular characteristics, trends and distributions.  
+We have a dataset from eBay motors website, with announcements for selling used and new cars in the USA, which we created by ourselves during the Webscapping course last semester. 
+The dataset consists of around 45 000 announcements with details like:
+
+
+- Brand
+- Price
+- Year
+- Mileage
+- Color
+- Engine
+- Body Type and etc.
+
+
+The variables are both discrete and continuous, so we are able to use a wide range of visualisation technics. 
+</font>
+
+```{r, echo=FALSE, warning=FALSE, error = FALSE, message = FALSE}
+library(ggplot2)
+library(tidyr)
+library(RColorBrewer)
+library(scales)
+library(tidyverse)
+library(gridExtra)
+library(cowplot)
+library(ggforce)
+library(GGally)
+library(Rmisc)
+library(grid)
+library(pastecs)
+library(dplyr)
+library(treemapify)
+library(qqplotr)
+
+cars <- read.csv('D:\\UW\\2nd semester\\ML\\Project\\cars.csv')
+cars <- cars[cars$Price < 100000,]
+cars <- cars[cars$Mileage < 200000,]
+cars <- na.omit(cars)
+options(scipen=999)
+
+cars3 <- cars %>% 
+  group_by(Make) %>% 
+  dplyr::summarise(number = n(), price = mean(Price))
+```
+
+## Scatter plot Price vs Year
+
+```{r scatter, echo = FALSE, warning=FALSE, error = FALSE, message = FALSE}
+ggplot(data = cars, aes(y=Price, x=Mileage)) + geom_point(alpha = 0.1, color = 'yellow')+geom_smooth(color = 'green')+scale_y_continuous(name = "Price in USD", breaks = seq(0, 100000, by = 10000), labels = format(seq(0, 100000, by = 10000), big.mark = ","))+scale_x_continuous(name = "Mileage in miles", breaks = seq(0, 200000, by = 50000), labels = format(seq(0, 200000, by = 50000), big.mark = " "))+ggtitle('Price vs Mileage dependency')+theme_dark()
+```
+The higher the Mileage - the lower the price.
+
+## Makers tileplot
+
+```{r tile, echo = FALSE, warning=FALSE, error = FALSE, message = FALSE}
+ggplot(cars3, aes(area = number, label = Make, fill = price)) +
+  geom_treemap() +
+  geom_treemap_text(fontface = "italic", colour = "white", place = "centre",
+                    grow = F) +
+  scale_fill_gradient(guide = guide_colorbar(barheight = 10))
+```
+The largest category 'Other' consists of a huge variety of small and medium cars brands. The top makers are Ford and Chevrolet.
+
+## Correlation matrix
+
+```{r corr, echo = FALSE, warning=FALSE, error = FALSE, message = FALSE}
+#Corrplot
+corr <- cor(cars %>% select(Price, Year, Mileage, Engine, Cylinders))
+ggcorrplot::ggcorrplot(corr, hc.order = TRUE, type = "lower", lab = TRUE) 
+```
+
+<font size="2">
+There isn't strong correlation between numeric variables, because cars' characteristics can be too different and individual.
+However we can see one interesting finding - decreasing Cylinders number with the time. 
+</font>
+
+## Mileage boxplots
+
+```{r box, echo = FALSE, warning=FALSE, error = FALSE, message = FALSE}
+ggplot(data = cars, aes(y = Mileage, x = Make, fill = Make)) +
+  geom_boxplot(show.legend = F) +
+  coord_flip()
+```
+
+Toyota cars have the highest mean mileage, while RAM - the lowest. The mean Mileage is around 40-50 thousands miles. 
+
+## Count hist
+
+```{r hist, echo = FALSE, warning=FALSE, error = FALSE, message = FALSE}
+cars2 <- cars %>% 
+  group_by(Year) %>% 
+  dplyr::summarise(number = n())
+
+Year <- cars2[cars2$Year>2000,]$Year
+
+ggplot(data = cars2[cars2$Year>2000,], aes(x = Year, y = number)) +
+  geom_bar(stat = 'identity', fill = 'darkblue', color = 'white') +
+  theme_classic() +
+  geom_text(aes(label = number), hjust = -.5, size = 3.5, angle = 90)+
+  labs(y = "Count",  title = "Number of cars by year of prod") +
+  scale_x_continuous("Year of production", labels = as.character(Year), breaks = Year)+
+  scale_y_continuous(limits = c(0,7700))+
+  theme(axis.text.x = element_text(angle = 90, vjust = .5))
+```
+
+The most selling cars are 3-5 years old, because people frequently tries to get rid of new cars after warranty expiration to buy a newer model. 
+
+## Price distribution by sellers
+```{r normal, echo = FALSE, warning=FALSE, error = FALSE, message = FALSE}
+ggplot(data = cars, aes(x = Price)) +
+  geom_histogram(alpha = 0.9,position = 'stack', aes(y = ..count../sum(..count..), fill = For.Sale.By)) +
+  scale_y_continuous(breaks = seq(0, .2, by = 0.01), labels = scales::percent)+theme_classic()+
+  ylab('Share')+
+  scale_fill_manual(values = c("Private" = "darkgrey",
+                               "Dealer" = "red"
+                               ))
+```
+
+And indeed, the most cars are selling by dealers.
+
+## Normality check
+
+```{r normal2, echo = FALSE, warning=FALSE, error = FALSE, message = FALSE}
+w1 <- ggplot(data = cars, aes(x = Price)) +
+  geom_histogram(aes(y = ..density..)) +
+  ylab('Density')+
+  stat_function(fun = dnorm,
+                color = 'blue',
+                size = 1,
+                args = list(mean = mean(cars$Price), sd(cars$Price)))
+##QQ plot
+w2 <- ggplot(cars, aes(sample = Price)) + 
+  stat_qq_point() + # stat_gg_point instead of stat_qq()
+  stat_qq_line(color = 'red') + # identity line
+  stat_qq_band()
+
+#Subplot
+ggdraw() +
+  draw_plot(w1 + theme(legend.justification = "bottom"),
+            0, 0, 1, 1) + # size of the first graph (coordinates of bottom left corner and then height and width)
+  draw_plot(w2 + theme(legend.position = 'none', 
+                       axis.title = element_text(size = 9)), 
+            0.5, 0.5, 0.5, 0.5) + # the same as above
+  draw_plot_label(c("Normal disstibution", "QQ Plot"), c(0, 0.5), c(1, 1), size = 10)
+```
+
+The price's distribution is far away from normal.
+
+## Price by Brand and Body Type
+```{r dist, echo = FALSE, warning=FALSE, error = FALSE, message = FALSE}
+  ggplot(data = cars, aes(x = Price, y = ..count../sum(..count..), color = Body.Type)) +
+    stat_bin(bins = 20, geom = 'line', position = 'dodge', size = 1)+
+    scale_y_continuous(breaks = seq(0, 1, by = 0.01), labels = scales::percent)+
+    ylab('Share')
+```
+
+Traditionally the most popular body types is USA are SUV and Pickup. However Sedan is popular as well. 
+
+## Mean price
+```{r mean, echo = FALSE, warning=FALSE, error = FALSE, message = FALSE}
+#Average price lineplot USA makers
+cars_avg_usa <- cars[cars$Year > 1960 & cars$Make %in% c('Ram', 'Ford', 'Dodge', 'GMC', 'Chevrolet'),] %>% 
+  group_by(Year) %>% 
+  dplyr::summarise(avg = mean(Price), .groups = 'drop')
+cars_avg_usa$Country <- 'USA'
+
+#Average price lineplot Germany makers
+cars_avg_germany <- cars[cars$Year > 1960 & cars$Make %in% c('BMW', 'Audi', 'Porsche', 'Mercedes-Benz'),] %>% 
+  group_by(Year) %>% 
+  dplyr::summarise(avg = mean(Price), .groups = 'drop')
+cars_avg_germany$Country <- 'Germany'
+
+#Average price lineplot Japan makers
+cars_avg_japan <- cars[cars$Year > 1960 & cars$Make %in% c('Toyota', 'Lexus'),] %>% 
+  group_by(Year) %>% 
+  dplyr::summarise(avg = mean(Price), .groups = 'drop')
+cars_avg_japan$Country <- 'Japan'
+
+#Average price lineplot Other makers
+cars_avg_other <- cars[cars$Year > 1960 & cars$Make %in% c('Other'),] %>% 
+  group_by(Year) %>% 
+  dplyr::summarise(avg = mean(Price), .groups = 'drop')
+cars_avg_other$Country <- 'other'
+
+cars_avg <- rbind(cars_avg_germany, cars_avg_japan, cars_avg_usa, cars_avg_other)
+
+ggplot(data = cars_avg, aes(x = Year, y = avg, color = factor(Country))) +
+  geom_line(size = 1) +
+  geom_hline(yintercept=median(cars_avg$avg), linetype="dashed", 
+             color = "red")+
+  theme_minimal()+
+  ggtitle(label = 'Average makers price by Country')+
+  ylab('Price in USD')
+```
+
+Mediam cars price (red dashed) is around 25000. Germany's producers are the most expensive and Japan's are the least. Very old cars (antique) are such expensive as new ones.
+
+## Exterior color
+```{r color, echo = FALSE, warning=FALSE, error = FALSE, message = FALSE}
+ggplot(data = cars, aes(x = Make, fill = Exterior.Color)) +
+  geom_bar(position = "stack")+
+  theme(axis.text.x = element_text(angle = 90, vjust = .5))+
+  scale_fill_manual("legend", values = c("Black" = "black", "White" = "white", "Silver" = "lightgrey", "Red" = "red", "Green" = "green", "Gray" = "darkgray", "Blue" = "blue", "Other" = "cyan"))+
+  labs(y = "Count", x = "Make", title = "Exterior colors distribution")+
+  theme(panel.background = element_rect(fill = '#fffae0'))
+```
+
+The most popular exterior colors are default ones:  black, white and gray/silver.
+
+## Transmission types share
+```{r trans, echo = FALSE, warning=FALSE, error = FALSE, message = FALSE}
+ggplot(data = cars[cars$Year>"1945",], aes(x = Year, fill = Transmission)) +
+  geom_bar(position = "fill", width=1) +theme_minimal()+
+  labs(y = "Share", x = "Year of production", title = "Transmission change trend")+
+  scale_fill_manual(values = c("Manual" = "#353436",
+                               "Automatic" = "#1b98e0"
+                               ))
+```
+
+Popularity of manual transmission type is decreasing.
+
+## Body types
+```{r body, echo = FALSE, warning=FALSE, error = FALSE, message = FALSE}
+ggplot(data = cars[sample.int(nrow(cars),100),], aes(x=Year, y=Price, shape = Body.Type, color = Fuel.Type)) + geom_point(alpha = 0.3, size = 6, stroke = 2)+scale_y_continuous(name = "Price in USD", breaks = seq(0, 100000, by = 20000), labels = format(seq(0, 100000, by = 20000), big.mark = ","))+scale_x_continuous(name = "Year", breaks = seq(1900, 2025, by = 15), labels = format(seq(1900, 2025, by = 15)))+theme_minimal()+scale_shape_manual(values=c(15, 1, 2, 17, 18, 0, 16, 3))+ggtitle('Price of various body and fuel types')
+```
+
+SUV and pickups and sedans seems to be the most popular ones nowadays, and exotic body types was popular in the past. The most vehicles are using gasoline.
+
+## Engine Volume 
+```{r mile, echo = FALSE, warning=FALSE, error = FALSE, message = FALSE}
+cars_engine <- cars[cars$Year >= 1950,] %>% 
+  group_by(Year, Drive.Type) %>% 
+  dplyr::summarise(avg = mean(Engine), .groups = 'drop')
+
+ggplot() +
+  geom_col(data = cars_engine,  aes(x = Year, y = avg, fill = Drive.Type), position = 'dodge', width = 1, alpha = 0.5)+
+  ylab('Average Engine Volume')
+```
+
+AWD trucks have bigger engine volume. And it is increasing till 2000s, then fuel economy behavior appeared as well as more effective engines and engine volume trend became negative. 
+
+## Engines boxplots
+```{r box2, echo = FALSE, warning=FALSE, error = FALSE, message = FALSE}
+ggplot(data = cars[cars$Year >= 2000,], aes(y = Engine, x = Drive.Type, fill = Turbo)) +
+  geom_boxplot()+
+  scale_fill_manual(values = c("No" = "#e016c9",
+                               "Yes" = "#d9e016"
+                               ))+
+  theme_bw()
+```
+
+<font size="2">
+From another perspective engines for both 4WD and 2WD cars have no significant differences. 2WD has more outliers with extremely high values - it could be some custom race cars. Additionally turbo cars have lower engine volume. 
+</font>
+
+## Conclusions
+
+<font size="4">
+
+- Cars with higher mileage is less expensive
+
+- The highest share of American cars market is filled with american cars brands
+
+- The most cars are 3-5 years old and selling by dealers
+
+- SUV, Sedan and Pickup are the most popular body types.
+
+- Germany's brands are more expensive, while Japan's are the cheapest.
+
+- The most popular exterior colors are default ones: black, white, gray
+
+- Manual transmission becomes less popular with time
+
+- Engines' volumes are becoming less and less after 2000 
+
+</font>
+
+## Thank you!
